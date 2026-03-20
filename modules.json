@@ -1,0 +1,47 @@
+{
+  "name": "",
+  "homePage": "",
+  "repos": {
+    "https://github.com/nf-core/modules.git": {
+      "modules": {
+        "nf-core": {
+          "gatk4/calculatecontamination": {
+            "branch": "master",
+            "git_sha": "86308d628760125908c5c77540517effe0f8880f",
+            "installed_by": ["modules"]
+          },
+          "gatk4/filtermutectcalls": {
+            "branch": "master",
+            "git_sha": "86308d628760125908c5c77540517effe0f8880f",
+            "installed_by": ["modules"]
+          },
+          "gatk4/getpileupsummaries": {
+            "branch": "master",
+            "git_sha": "86308d628760125908c5c77540517effe0f8880f",
+            "installed_by": ["modules"]
+          },
+          "gatk4/learnreadorientationmodel": {
+            "branch": "master",
+            "git_sha": "52b7843bd92ccf833cc12e71cd84aeccf2583852",
+            "installed_by": ["modules"]
+          },
+          "parabricks/applybqsr": {
+            "branch": "master",
+            "git_sha": "f0b0dc3c3f001b1b7bf814a3c353baecbab17ea1",
+            "installed_by": ["modules"]
+          },
+          "parabricks/fq2bam": {
+            "branch": "master",
+            "git_sha": "f0b0dc3c3f001b1b7bf814a3c353baecbab17ea1",
+            "installed_by": ["modules"]
+          },
+          "parabricks/mutectcaller": {
+            "branch": "master",
+            "git_sha": "5e748ff2b0f990949081c9e49792622eb3fe9ee9",
+            "installed_by": ["modules"]
+          }
+        }
+      }
+    }
+  }
+}
