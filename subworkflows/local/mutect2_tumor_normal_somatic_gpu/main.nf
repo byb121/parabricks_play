@@ -10,9 +10,9 @@ include { PARABRICKS_MUTECTCALLER                                     } from '..
 workflow MUTECT2_TUMOR_NORMAL_SOMATIC_GPU {
 
     take:
-    ch_input // channel: [ val(meta), path(input), path(input_index), val(which_norm) ]
+    ch_input // channel: [ val(meta), path(tumor_bam), path(tumor_bam_index), path(normal_bam), path(normal_bam_index) ]
     ch_fasta // channel: [ val(meta), path(fasta) ]
-    ch_fai // channel: [ val(meta), path(fai), path(gzi) ]
+    ch_fai // channel: [ val(meta), path(fai) ]
     ch_dict // channel: [ val(meta), path(dict) ]
     ch_alleles // channel: /path/to/alleles
     ch_alleles_tbi // channel: /path/to/alleles/index
@@ -25,35 +25,32 @@ workflow MUTECT2_TUMOR_NORMAL_SOMATIC_GPU {
     main:
     // Perform variant calling using PARABRICKS_MUTECTCALLER module in tumor single mode.
     PARABRICKS_MUTECTCALLER(
-        // TODO: all inputs needs a change
-        // ch_input,
-        // ch_fasta,
-        // ch_fai,
-        // ch_dict,
-        // ch_alleles,
-        // ch_alleles_tbi,
-        // ch_germline_resource,
-        // ch_germline_resource_tbi,
-        // ch_panel_of_normals,
-        // ch_panel_of_normals_tbi,
+        ch_input.combine(ch_interval_file.first()), // Combine interval file with input channel to pass intervals to the module
+        ch_fasta,
+        ch_alleles,
+        ch_alleles_tbi,
+        ch_germline_resource,
+        ch_germline_resource_tbi,
+        ch_panel_of_normals,
+        ch_panel_of_normals_tbi,
     )
 
     // Generate artifactpriors using learnreadorientationmodel on the f1r2 output of PARABRICKS_MUTECTCALLER.
-    GATK4_LEARNREADORIENTATIONMODEL(PARABRICKS_MUTECTCALLER.out.f1r2.collect())
+    GATK4_LEARNREADORIENTATIONMODEL(PARABRICKS_MUTECTCALLER.out.f1r2)
 
     // Generate pileup summary tables using getepileupsummaries
     // Tumor sample should always be passed in as the first input and input list entries of ch_input,
     // to ensure correct file order for calculatecontamination.
     ch_pileup_tumor_input = ch_input
         .combine(ch_interval_file)
-        .map { meta, input_file, input_index, _which_norm, intervals ->
-            [meta, input_file[0], input_index[0], intervals]
+        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, intervals ->
+            [meta, tumor_bam, tumor_bam_index, intervals]
         }
 
     ch_pileup_normal_input = ch_input
         .combine(ch_interval_file)
-        .map { meta, input_file, input_index, _which_norm, intervals ->
-            [meta, input_file[1], input_index[1], intervals]
+        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, intervals ->
+            [meta, normal_bam, normal_bam_index, intervals]
         }
 
     GATK4_GETPILEUPSUMMARIES_TUMOR(

@@ -5,18 +5,25 @@ process PARABRICKS_MUTECTCALLER {
     // needed by the module to work properly can be removed when fixed upstream - see: https://github.com/nf-core/modules/issues/7226
     stageInMode 'copy'
 
-    container "nvcr.io/nvidia/clara/clara-parabricks:4.6.0-1"
+    container "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
 
     input:
     tuple val(meta), path(tumor_bam), path(tumor_bam_index), path(normal_bam), path(normal_bam_index), path(intervals)
     tuple val(ref_meta), path(fasta)
+    path alleles
+    path alleles_tbi
+    path germline_resource
+    path germline_resource_tbi
     path panel_of_normals
     path panel_of_normals_index
 
     output:
-    tuple val(meta), path("*.vcf.gz"),       emit: vcf
-    tuple val(meta), path("*.vcf.gz.stats"), emit: stats
-    path "compatible_versions.yml",          emit: compatible_versions, optional: true
+    tuple val(meta), path("${prefix}.vcf.gz"),           emit: vcf
+    tuple val(meta), path("${prefix}.vcf.gz.tbi"),       emit: tbi
+    tuple val(meta), path("${prefix}.vcf.gz.stats"),     emit: stats
+    tuple val(meta), path("${prefix}_annotated.vcf.gz"), emit: annotated_vcf,       optional: true
+    tuple val(meta), path("${prefix}.f1r2.tar.gz"),      emit: f1r2,                optional: true
+    path  "compatible_versions.yml",                     emit: compatible_versions, optional: true
     tuple val("${task.process}"), val('parabricks'), eval("pbrun version | grep -m1 '^pbrun:' | sed 's/^pbrun:[[:space:]]*//'"), topic: versions, emit: versions_parabricks
 
     when:
@@ -29,11 +36,15 @@ process PARABRICKS_MUTECTCALLER {
     }
 
     def args = task.ext.args ?: ''
-    def prefix = task.ext.prefix ?: "${meta.id}"
+    prefix = task.ext.prefix ?: "${meta.id}"
 
     def intervals_command  = intervals     ? (intervals instanceof List ? intervals.collect { interval -> "--interval-file ${interval}" }.join(' ') : "--interval-file ${intervals}") : ""
     def prepon_command = panel_of_normals ? "cp -L ${panel_of_normals_index} `readlink -f ${panel_of_normals}`.tbi && pbrun prepon --in-pon-file ${panel_of_normals}" : ""
+    def pon_command = panel_of_normals ? "--pon-file ${panel_of_normals}" : ""
     def postpon_command = panel_of_normals ? "pbrun postpon --in-vcf ${prefix}.vcf.gz --in-pon-file ${panel_of_normals} --out-vcf ${prefix}_annotated.vcf.gz" : ""
+
+    def gr_command = germline_resource ? "--germline-resource ${germline_resource}" : ""
+    def a_command = alleles ? "--alleles ${alleles}" : ""
 
     def num_gpus = task.accelerator ? "--num-gpus ${task.accelerator.request}" : ""
     """
@@ -45,8 +56,13 @@ process PARABRICKS_MUTECTCALLER {
         --ref ${fasta} \\
         --in-tumor-bam ${tumor_bam} \\
         --tumor-name ${meta.tumor_id} \\
+        --in-normal-bam /${normal_bam} \\
+        --normal-name ${meta.normal_id} \\
         --out-vcf ${prefix}.vcf.gz \\
+        ${pon_command} \\
         ${intervals_command} \\
+        ${gr_command} \\
+        ${a_command} \\
         ${num_gpus} \\
         ${args}
 
@@ -55,7 +71,7 @@ process PARABRICKS_MUTECTCALLER {
     """
 
     stub:
-    def prefix = task.ext.prefix ?: "${meta.id}"
+    prefix = task.ext.prefix ?: "${meta.id}"
     def postpon_command = panel_of_normals ? "echo '' | gzip > ${prefix}_annotated.vcf.gz" : ""
     """
     echo "" | gzip > ${prefix}.vcf.gz

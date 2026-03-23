@@ -11,49 +11,90 @@
 ================================================================================
 */
 
-nextflow.enable.dsl = 2
-
-include { PARABRICKS_FQ2BAM                           } from './modules/nf-core/parabricks/fq2bam/main'
+include { PARABRICKS_FQ2BAM                          } from './modules/nf-core/parabricks/fq2bam/main'
 include { MUTECT2_TUMOR_NORMAL_SOMATIC_GPU           } from './subworkflows/local/mutect2_tumor_normal_somatic_gpu'
 include { PARABRICKS_APPLYBQSR                       } from './modules/nf-core/parabricks/applybqsr/main'
 
 workflow {
 
-    // Input channels
-    ch_tumor_fastq = Channel.fromFilePairs(params.tumor_fastq_pattern, checkIfExists: true)
-        .map { sample_id, fastq_files ->
-            def meta = [id: sample_id, sample: sample_id, single_end: false]
-            [meta, fastq_files]
+    // read in sample sheet and create channels for tumor and normal FASTQ files
+    ch_samples = Channel.fromPath(params.input_samplesheet, checkIfExists: true)
+        .splitCsv(header: true)
+        .flatMap { row ->
+            def tumor_meta = [id: row.tumor_id, sample_type: 'tumor', sample_name: row.sample_name, single_end: false]
+            def normal_meta = [id: row.normal_id, sample_type: 'normal', sample_name: row.sample_name, single_end: false]
+            def tumor_fastq_files = [tumor_meta, [file(row.tumor_fastq_1), file(row.tumor_fastq_2)]]
+            def normal_fastq_files = [normal_meta, [file(row.normal_fastq_1), file(row.normal_fastq_2)]]
+            [tumor_fastq_files, normal_fastq_files]
         }
-
-    ch_normal_fastq = Channel.fromFilePairs(params.normal_fastq_pattern, checkIfExists: true)
-        .map { sample_id, fastq_files ->
-            def meta = [id: sample_id, sample: sample_id, single_end: false]
-            [meta, fastq_files]
-        }
+        .view()
 
     // Reference genome
-    ch_fasta = Channel.fromPath(params.fasta, checkIfExists: true)
+    ch_fasta = Channel.fromPath(params.fasta, checkIfExists: true, glob: false)
         .map { fasta ->
             [[id: 'genome'], fasta]
         }
+    ch_interval_file = Channel.value('') // No intervals for now, can be set to a channel of interval files if needed
+    ch_bwa_index = Channel.fromPath(params.bwa_index, checkIfExists: true, glob: false)
+        .map { index ->
+            [[id: 'genome'], index]
+        }
 
-    ch_fasta_index = Channel.fromPath(params.fasta_fai, checkIfExists: true)
+    ch_dbsnp = Channel.fromPath(params.dbsnp, checkIfExists: true, glob: false)
+        .map { dbsnp ->
+            [[id: 'dbsnp'], dbsnp]
+        }
+    ch_known_indels = Channel.fromPath(params.known_indels, checkIfExists: true, glob: false)
+        .map { indels ->
+            [[id: 'known_indels'], indels]
+        }
+    ch_mills_and_1000G_gold_standard = Channel.fromPath(params.mills_and_1000G_gold_standard, checkIfExists: true, glob: false)
+        .map { gold_standard ->
+            [[id: 'mills_and_1000G_gold_standard'], gold_standard]
+        }
+
+    ch_known_sites = ch_dbsnp
+        .mix(ch_known_indels)
+        .mix(ch_mills_and_1000G_gold_standard)
+        .collect(flat: false)
+        .map { dbsnp, indels, gold_standard ->
+            [[id: 'known_sites'], [dbsnp[1], indels[1], gold_standard[1]]]
+        }.view()
+
+    // Align sample fastqs with fq2bam
+    PARABRICKS_FQ2BAM(
+        ch_samples,
+        ch_fasta,
+        ch_bwa_index,
+        ch_interval_file,  // No intervals for now
+        ch_known_sites,
+        'bam'
+    )
+
+    ch_apply_bqsr_input = PARABRICKS_FQ2BAM.out.bam
+        .join(PARABRICKS_FQ2BAM.out.bai, failOnDuplicate: true, failOnMismatch: true)
+        .join(PARABRICKS_FQ2BAM.out.bqsr_table, failOnDuplicate: true, failOnMismatch: true)
+
+    // apply BQSR with PARABRICKS_APPLYBQSR
+    PARABRICKS_APPLYBQSR(   
+        ch_apply_bqsr_input,
+        ch_interval_file,  // No intervals for now
+        ch_fasta
+    )
+
+    // reference files for variant calling
+    ch_fasta_fai = Channel.fromPath(params.fasta_fai, checkIfExists: true, glob: false)
         .map { fai ->
             [[id: 'genome'], fai]
         }
-
-    ch_dict = Channel.fromPath(params.dict, checkIfExists: true)
+    ch_fasta_dict = Channel.fromPath(params.dict, checkIfExists: true, glob: false)
         .map { dict ->
             [[id: 'genome'], dict]
         }
-
-    // Optional reference files for variant calling
     ch_alleles = Channel.fromPath(params.alleles, checkIfExists: true)
         .map { alleles ->
             [[id: 'alleles'], alleles]
         }
-
     ch_alleles_tbi = Channel.fromPath(params.alleles_tbi, checkIfExists: true)
         .map { tbi ->
             [[id: 'alleles'], tbi]
@@ -63,7 +104,6 @@ workflow {
         .map { resource ->
             [[id: 'germline'], resource]
         }
-
     ch_germline_resource_tbi = Channel.fromPath(params.germline_resource_tbi, checkIfExists: true)
         .map { tbi ->
             [[id: 'germline'], tbi]
@@ -73,101 +113,34 @@ workflow {
         .map { pon ->
             [[id: 'pon'], pon]
         }
-
     ch_panel_of_normals_tbi = Channel.fromPath(params.panel_of_normals_tbi, checkIfExists: true)
         .map { tbi ->
             [[id: 'pon'], tbi]
         }
 
-    ch_interval_file = Channel.fromPath(params.interval_file, checkIfExists: true)
-
-    // BWA index
-    ch_bwa_index = Channel.fromPath(params.bwa_index, checkIfExists: true)
-        .map { index ->
-            [[id: 'genome'], index]
-        }
-
-    // Known sites for BQSR
-    ch_known_sites = Channel.fromPath(params.known_sites, checkIfExists: true)
-
-    // Align tumor sample with fq2bam
-    PARABRICKS_FQ2BAM(
-        ch_tumor_fastq,
-        ch_fasta,
-        ch_bwa_index,
-        ch_interval_file,
-        ch_known_sites,
-        'bam'
-    )
-
     // Set output name for tumor BAM
-    ch_tumor_bam = PARABRICKS_FQ2BAM.out.bam.map { meta, bam ->
-        [[id: "${meta.id}_tumor"], bam]
-    }
-
-    ch_tumor_bai = PARABRICKS_FQ2BAM.out.bai.map { meta, bai ->
-        [[id: "${meta.id}_tumor"], bai]
-    }
-
-    // Align normal sample with fq2bam
-    PARABRICKS_FQ2BAM(
-        ch_normal_fastq,
-        ch_fasta,
-        ch_bwa_index,
-        ch_interval_file,
-        ch_known_sites,
-        'bam'
-    )
-
-    // Set output name for normal BAM
-    ch_normal_bam = PARABRICKS_FQ2BAM.out.bam.map { meta, bam ->
-        [[id: "${meta.id}_normal"], bam]
-    }
-
-    ch_normal_bai = PARABRICKS_FQ2BAM.out.bai.map { meta, bai ->
-        [[id: "${meta.id}_normal"], bai]
-    }
-
-    // Combine tumor and normal BAMs for MUTECT2 workflow
-    // Input format: [ val(meta), path(input), path(input_index), val(which_norm) ]
-    ch_bam_pair = ch_tumor_bam
-        .join(ch_tumor_bai)
-        .combine(
-            ch_normal_bam.join(ch_normal_bai),
-            by: 0  // This won't work directly, need a different approach
-        )
-
-    // Alternative approach: Create a combined channel with sample linking
-    // Cross product of tumor and normal samples
-    ch_bam_pairs = ch_tumor_bam
-        .join(ch_tumor_bai)
-        .map { meta, tumor_bam, tumor_bai ->
-            [sample: meta.id.replaceAll('_tumor', ''), meta: meta, tumor_bam: tumor_bam, tumor_bai: tumor_bai]
-        }
-        .combine(
-            ch_normal_bam
-                .join(ch_normal_bai)
-                .map { meta, normal_bam, normal_bai ->
-                    [sample: meta.id.replaceAll('_normal', ''), meta: meta, normal_bam: normal_bam, normal_bai: normal_bai]
-                },
-            by: 0  // Match by sample ID
-        )
-        .map { sample, tumor_data, normal_data ->
-            def combined_meta = [id: sample, single_end: false]
-            [
-                combined_meta,
-                [tumor_data.tumor_bam, normal_data.normal_bam],
-                [tumor_data.tumor_bai, normal_data.normal_bai],
-                0  // 0 indicates tumor is reference (first input)
-            ]
+    ch_recalibrated_bam = PARABRICKS_APPLYBQSR.out.bam
+        .join(PARABRICKS_APPLYBQSR.out.bai, failOnDuplicate: true, failOnMismatch: true)
+        .branch { meta, bam, bai ->
+            def new_meta = [id: meta.sample_name]
+            tumor: meta.sample_type == 'tumor'
+                return [new_meta, meta, bam, bai]
+            normal: true
+                return [new_meta, meta, bam, bai]
         }
 
-    // Call somatic variants using MUTECT2 workflow
+    ch_mutect2_input = ch_recalibrated_bam.tumor
+        .join(ch_recalibrated_bam.normal, failOnDuplicate: true, failOnMismatch: true)
+        .map { meta, tumor_meta, tumor_bam, tumor_bai, normal_meta, normal_bam, normal_bai ->
+            def new_meta = [id: meta.id, normal_id: normal_meta.id, tumor_id: tumor_meta.id]
+            [new_meta, tumor_bam, tumor_bai, normal_bam, normal_bai]
+        }
+    
     MUTECT2_TUMOR_NORMAL_SOMATIC_GPU(
-        ch_bam_pairs,
+        ch_mutect2_input,
         ch_fasta,
-        ch_fasta_index,
-        ch_dict,
+        ch_fasta_fai,
+        ch_fasta_dict,
         ch_alleles,
         ch_alleles_tbi,
         ch_germline_resource,
