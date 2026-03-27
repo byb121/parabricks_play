@@ -5,7 +5,7 @@ process PARABRICKS_FQ2BAM {
     // needed by the module to run on a cluster because we need to copy the fasta reference, see https://github.com/nf-core/modules/issues/9230
     stageInMode 'copy'
 
-    container "nvcr.io/nvidia/clara/clara-parabricks:4.6.0-1"
+    container "nvcr.io/nvidia/clara/clara-parabricks:4.7.0-1"
 
     input:
     tuple val(meta), path(reads)
@@ -40,7 +40,7 @@ process PARABRICKS_FQ2BAM {
     def in_fq_command = meta.single_end ? "--in-se-fq ${reads}" : "--in-fq ${reads.join(' ')}"
     def extension = "${output_fmt}"
 
-    def known_sites_command = known_sites ? (known_sites instanceof List ? known_sites.collect { knownSite -> "--knownSites ${knownSite}" }.join(' ') : "--knownSites ${known_sites}") : ""
+    def known_sites_command = known_sites ? (known_sites instanceof List ? known_sites.findAll {file -> file.name.endsWith('.gz')}.collect { knownSite -> "--knownSites ${knownSite}" }.join(' ') : "--knownSites ${known_sites}") : ""
     def known_sites_output_cmd = known_sites ? "--out-recal-file ${prefix}.table" : ""
     def intervals_command = intervals ? (intervals instanceof List ? intervals.collect { interval -> "--interval-file ${interval}" }.join(' ') : "--interval-file ${intervals}") : ""
 

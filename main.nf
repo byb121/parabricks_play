@@ -27,46 +27,59 @@ workflow {
             def normal_fastq_files = [normal_meta, [file(row.normal_fastq_1), file(row.normal_fastq_2)]]
             [tumor_fastq_files, normal_fastq_files]
         }
-        .view()
 
     // Reference genome
-    ch_fasta = Channel.fromPath(params.fasta, checkIfExists: true, glob: false)
-        .map { fasta ->
-            [[id: 'genome'], fasta]
-        }
-    ch_interval_file = Channel.value('') // No intervals for now, can be set to a channel of interval files if needed
-    ch_bwa_index = Channel.fromPath(params.bwa_index, checkIfExists: true, glob: false)
-        .map { index ->
-            [[id: 'genome'], index]
-        }
-
-    ch_dbsnp = Channel.fromPath(params.dbsnp, checkIfExists: true, glob: false)
-        .map { dbsnp ->
-            [[id: 'dbsnp'], dbsnp]
-        }
-    ch_known_indels = Channel.fromPath(params.known_indels, checkIfExists: true, glob: false)
-        .map { indels ->
-            [[id: 'known_indels'], indels]
-        }
-    ch_mills_and_1000G_gold_standard = Channel.fromPath(params.mills_and_1000G_gold_standard, checkIfExists: true, glob: false)
-        .map { gold_standard ->
-            [[id: 'mills_and_1000G_gold_standard'], gold_standard]
-        }
+    ch_fasta = Channel.value([
+        [id: 'genome'],
+        file(params.fasta, checkIfExists: true, glob: false)
+    ])
+    ch_interval_file = Channel.value([[id: 'intervals'], []]) // No intervals for now, can be set to a channel of interval files if needed
+    ch_bwa_index = Channel.value([
+        [id: 'genome'],
+        file(params.bwa_index, checkIfExists: true, glob: false)
+    ])
+    ch_dbsnp = Channel.value([
+        [id: 'dbsnp'],
+        file(params.dbsnp, checkIfExists: true, glob: false)
+    ])
+    ch_dnsnp_tbi = Channel.value([
+        [id: 'dbsnp_index'],
+        file(params.dbsnp_tbi, checkIfExists: true, glob: false)
+    ])
+    ch_known_indels = Channel.value([
+        [id: 'known_indels'],
+        file(params.known_indels, checkIfExists: true, glob: false)
+    ])
+    ch_known_indels_tbi = Channel.value([
+        [id: 'known_indels_index'],
+        file(params.known_indels_tbi, checkIfExists: true, glob: false)
+    ])
+    ch_mills_and_1000G_gold_standard = Channel.value([
+        [id: 'mills_and_1000G_gold_standard'],
+        file(params.mills_and_1000G_gold_standard, checkIfExists: true, glob: false)
+    ])
+    ch_mills_and_1000G_gold_standard_tbi = Channel.value([
+        [id: 'mills_and_1000G_gold_standard_index'],
+        file(params.mills_and_1000G_gold_standard_tbi, checkIfExists: true, glob: false)
+    ])
 
     ch_known_sites = ch_dbsnp
+        .mix(ch_dnsnp_tbi)
         .mix(ch_known_indels)
+        .mix(ch_known_indels_tbi)
         .mix(ch_mills_and_1000G_gold_standard)
+        .mix(ch_mills_and_1000G_gold_standard_tbi)
         .collect(flat: false)
-        .map { dbsnp, indels, gold_standard ->
-            [[id: 'known_sites'], [dbsnp[1], indels[1], gold_standard[1]]]
-        }.view()
+        .map { dbsnp, dnsnp_tbi, indels, indels_tbi, gold_standard, gold_standard_tbi ->
+            [[id: 'known_sites'], [dbsnp[1], dnsnp_tbi[1], indels[1], indels_tbi[1], gold_standard[1], gold_standard_tbi[1]]]
+        }
 
     // Align sample fastqs with fq2bam
     PARABRICKS_FQ2BAM(
         ch_samples,
         ch_fasta,
         ch_bwa_index,
-        ch_interval_file,  // No intervals for now
+        ch_interval_file,
         ch_known_sites,
         'bam'
     )
@@ -78,45 +91,25 @@ workflow {
     // apply BQSR with PARABRICKS_APPLYBQSR
     PARABRICKS_APPLYBQSR(   
         ch_apply_bqsr_input,
-        ch_interval_file,  // No intervals for now
+        ch_interval_file,
         ch_fasta
     )
 
     // reference files for variant calling
-    ch_fasta_fai = Channel.fromPath(params.fasta_fai, checkIfExists: true, glob: false)
-        .map { fai ->
-            [[id: 'genome'], fai]
-        }
-    ch_fasta_dict = Channel.fromPath(params.dict, checkIfExists: true, glob: false)
-        .map { dict ->
-            [[id: 'genome'], dict]
-        }
-    ch_alleles = Channel.fromPath(params.alleles, checkIfExists: true)
-        .map { alleles ->
-            [[id: 'alleles'], alleles]
-        }
-    ch_alleles_tbi = Channel.fromPath(params.alleles_tbi, checkIfExists: true)
-        .map { tbi ->
-            [[id: 'alleles'], tbi]
-        }
-
-    ch_germline_resource = Channel.fromPath(params.germline_resource, checkIfExists: true)
-        .map { resource ->
-            [[id: 'germline'], resource]
-        }
-    ch_germline_resource_tbi = Channel.fromPath(params.germline_resource_tbi, checkIfExists: true)
-        .map { tbi ->
-            [[id: 'germline'], tbi]
-        }
-
-    ch_panel_of_normals = Channel.fromPath(params.panel_of_normals, checkIfExists: true)
-        .map { pon ->
-            [[id: 'pon'], pon]
-        }
-    ch_panel_of_normals_tbi = Channel.fromPath(params.panel_of_normals_tbi, checkIfExists: true)
-        .map { tbi ->
-            [[id: 'pon'], tbi]
-        }
+    ch_fasta_fai = Channel.value([
+        [id: 'genome'],
+        file(params.fasta_fai, checkIfExists: true, glob: false)
+    ])
+    ch_fasta_dict = Channel.value([
+        [id: 'genome'],
+        file(params.dict, checkIfExists: true, glob: false)
+    ])
+    ch_alleles = Channel.value([])
+    ch_alleles_tbi = Channel.value([])
+    ch_germline_resource = Channel.value(file(params.germline_resource, checkIfExists: true, glob: false))
+    ch_germline_resource_tbi = Channel.value(file(params.germline_resource_tbi, checkIfExists: true, glob: false))
+    ch_panel_of_normals = Channel.value(file(params.panel_of_normals, checkIfExists: true, glob: false))
+    ch_panel_of_normals_tbi = Channel.value(file(params.panel_of_normals_tbi, checkIfExists: true, glob: false))
 
     // Set output name for tumor BAM
     ch_recalibrated_bam = PARABRICKS_APPLYBQSR.out.bam

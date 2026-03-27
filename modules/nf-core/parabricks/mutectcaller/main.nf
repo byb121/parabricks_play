@@ -56,7 +56,7 @@ process PARABRICKS_MUTECTCALLER {
         --ref ${fasta} \\
         --in-tumor-bam ${tumor_bam} \\
         --tumor-name ${meta.tumor_id} \\
-        --in-normal-bam /${normal_bam} \\
+        --in-normal-bam ${normal_bam} \\
         --normal-name ${meta.normal_id} \\
         --out-vcf ${prefix}.vcf.gz \\
         ${pon_command} \\

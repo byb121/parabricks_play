@@ -23,9 +23,13 @@ workflow MUTECT2_TUMOR_NORMAL_SOMATIC_GPU {
     ch_interval_file // channel: /path/to/interval/file
 
     main:
-    // Perform variant calling using PARABRICKS_MUTECTCALLER module in tumor single mode.
+    ch_mutect_input = ch_input.combine(ch_interval_file)
+        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, interval_meta, interval ->
+            [meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, interval]
+        }
+
     PARABRICKS_MUTECTCALLER(
-        ch_input.combine(ch_interval_file.first()), // Combine interval file with input channel to pass intervals to the module
+        ch_mutect_input,
         ch_fasta,
         ch_alleles,
         ch_alleles_tbi,
@@ -43,13 +47,13 @@ workflow MUTECT2_TUMOR_NORMAL_SOMATIC_GPU {
     // to ensure correct file order for calculatecontamination.
     ch_pileup_tumor_input = ch_input
         .combine(ch_interval_file)
-        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, intervals ->
+        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, interval_meta, intervals ->
             [meta, tumor_bam, tumor_bam_index, intervals]
         }
 
     ch_pileup_normal_input = ch_input
         .combine(ch_interval_file)
-        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, intervals ->
+        .map { meta, tumor_bam, tumor_bam_index, normal_bam, normal_bam_index, interval_meta, intervals ->
             [meta, normal_bam, normal_bam_index, intervals]
         }
 
