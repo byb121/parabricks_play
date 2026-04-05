@@ -38,6 +38,10 @@ workflow {
         [id: 'genome'],
         file(params.bwa_index, checkIfExists: true, glob: false)
     ])
+    ch_mutect_interval = Channel.value([
+        [id: 'mutect_intervals'],
+        file(params.mutect_interval, checkIfExists: true, glob: false)
+    ])
     ch_dbsnp = Channel.value([
         [id: 'dbsnp'],
         file(params.dbsnp, checkIfExists: true, glob: false)
@@ -140,13 +144,13 @@ workflow {
         ch_germline_resource_tbi,
         ch_panel_of_normals,
         ch_panel_of_normals_tbi,
-        ch_interval_file
+        ch_mutect_interval
     )
 
-    // Output results
-    MUTECT2_TUMOR_NORMAL_SOMATIC_GPU.out.filtered_vcf.view { meta, vcf ->
-        "Filtered VCF: ${vcf}"
-    }
+    // // Output results
+    // MUTECT2_TUMOR_NORMAL_SOMATIC_GPU.out.filtered_vcf.view { meta, vcf ->
+    //     "Filtered VCF: ${vcf}"
+    // }
 }
 
 workflow.onComplete {

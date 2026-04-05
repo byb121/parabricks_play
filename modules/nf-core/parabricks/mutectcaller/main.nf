@@ -21,7 +21,8 @@ process PARABRICKS_MUTECTCALLER {
     tuple val(meta), path("${prefix}.vcf.gz"),           emit: vcf
     tuple val(meta), path("${prefix}.vcf.gz.tbi"),       emit: tbi
     tuple val(meta), path("${prefix}.vcf.gz.stats"),     emit: stats
-    tuple val(meta), path("${prefix}_annotated.vcf.gz"), emit: annotated_vcf,       optional: true
+    tuple val(meta), path("${prefix}_pon_annotated.vcf.gz"), emit: annotated_vcf,       optional: true
+    tuple val(meta), path("${prefix}_pon_annotated.vcf.gz.tbi"), emit: annotated_vcf_tbi,       optional: true
     tuple val(meta), path("${prefix}.f1r2.tar.gz"),      emit: f1r2,                optional: true
     path  "compatible_versions.yml",                     emit: compatible_versions, optional: true
     tuple val("${task.process}"), val('parabricks'), eval("pbrun version | grep -m1 '^pbrun:' | sed 's/^pbrun:[[:space:]]*//'"), topic: versions, emit: versions_parabricks
@@ -39,11 +40,11 @@ process PARABRICKS_MUTECTCALLER {
     prefix = task.ext.prefix ?: "${meta.id}"
 
     def intervals_command  = intervals     ? (intervals instanceof List ? intervals.collect { interval -> "--interval-file ${interval}" }.join(' ') : "--interval-file ${intervals}") : ""
-    def prepon_command = panel_of_normals ? "cp -L ${panel_of_normals_index} `readlink -f ${panel_of_normals}`.tbi && pbrun prepon --in-pon-file ${panel_of_normals}" : ""
-    def pon_command = panel_of_normals ? "--pon-file ${panel_of_normals}" : ""
-    def postpon_command = panel_of_normals ? "pbrun postpon --in-vcf ${prefix}.vcf.gz --in-pon-file ${panel_of_normals} --out-vcf ${prefix}_annotated.vcf.gz" : ""
+    def prepon_command = panel_of_normals ? "if [ `readlink -f ${panel_of_normals_index}` != `readlink -f ${panel_of_normals}`.tbi ]; then cp -L ${panel_of_normals_index} `readlink -f ${panel_of_normals}`.tbi; fi && pbrun prepon --in-pon-file ${panel_of_normals}" : ""
+    def pon_command = panel_of_normals ? "--pon ${panel_of_normals}" : ""
+    def postpon_command = panel_of_normals ? "gunzip -c ${prefix}.vcf.gz > ${prefix}.vcf && pbrun postpon --in-vcf ${prefix}.vcf --in-pon-file ${panel_of_normals} --out-vcf ${prefix}_pon_annotated.vcf.gz" : ""
 
-    def gr_command = germline_resource ? "--germline-resource ${germline_resource}" : ""
+    def gr_command = germline_resource ? "--mutect-germline-resource ${germline_resource}" : ""
     def a_command = alleles ? "--alleles ${alleles}" : ""
 
     def num_gpus = task.accelerator ? "--num-gpus ${task.accelerator.request}" : ""
